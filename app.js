@@ -1,16 +1,172 @@
 // ========================================
 // SUPABASE CONFIGURATION
 // ========================================
-const SUPABASE_URL = 'https://vovtrxohcbwrjejywshn.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZvdnRyeG9oY2J3cmplanl3c2huIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3NjQ2OTYsImV4cCI6MjA4NzM0MDY5Nn0.6jXzrcZcxJ8kXvWwfxuRu7LJ2-RwjWpqDfxrCcjKj6U';
+var SUPABASE_URL      = 'https://vovtrxohcbwrjejywshn.supabase.co';
+var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZvdnRyeG9oY2J3cmplanl3c2huIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3NjQ2OTYsImV4cCI6MjA4NzM0MDY5Nn0.6jXzrcZcxJ8kXvWwfxuRu7LJ2-RwjWpqDfxrCcjKj6U';
 
-var db = null;
-try {
-    var _createClient = supabase.createClient;
-    db = _createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-} catch (e) {
-    console.error('Supabase init failed:', e);
+// ── Built-in Supabase REST client (no CDN required) ──────────────
+//
+// The Supabase JS library was loaded from jsdelivr.net, which fails
+// on Kindle and some Android browsers (SSL mismatch / CDN timeout).
+// This lightweight replacement talks directly to the Supabase REST
+// and Auth APIs using XMLHttpRequest, which every browser supports.
+// ────────────────────────────────────────────────────────────────
+
+var _vplSession = null;  // holds the auth session after login
+
+function _vplGetToken() {
+    return (_vplSession && _vplSession.access_token) ? _vplSession.access_token : SUPABASE_ANON_KEY;
 }
+
+// Core XHR helper — returns a Promise<responseData>
+function _vplXhr(method, url, headers, body) {
+    return new Promise(function (resolve, reject) {
+        var xhr = new XMLHttpRequest();
+        xhr.open(method, url, true);
+        Object.keys(headers).forEach(function (k) { xhr.setRequestHeader(k, headers[k]); });
+        xhr.timeout = 20000;
+
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState !== 4) return;
+            if (xhr.status === 0) { reject(new Error('Network error — check your connection')); return; }
+            var data = null;
+            if (xhr.responseText && xhr.responseText.trim()) {
+                try { data = JSON.parse(xhr.responseText); } catch (e) {}
+            }
+            if (xhr.status >= 200 && xhr.status < 300) {
+                resolve(data);
+            } else {
+                var msg = (data && (data.message || data.error_description || data.error || data.hint))
+                          || xhr.statusText || ('HTTP ' + xhr.status);
+                reject(new Error(msg));
+            }
+        };
+        xhr.onerror   = function () { reject(new Error('Network error — check your connection')); };
+        xhr.ontimeout = function () { reject(new Error('Request timed out — please refresh')); };
+        xhr.send((body !== undefined && body !== null) ? JSON.stringify(body) : null);
+    });
+}
+
+// Query builder — mirrors the Supabase JS client API used in this app
+function _vplFrom(table) {
+    var _op      = 'select';
+    var _cols    = '*';
+    var _filters = [];
+    var _ord     = null;
+    var _lim     = null;
+    var _single  = false;
+    var _body    = null;
+    var _cached  = null;
+
+    function _hdrs(extra) {
+        var h = {
+            'apikey':        SUPABASE_ANON_KEY,
+            'Authorization': 'Bearer ' + _vplGetToken(),
+            'Content-Type':  'application/json'
+        };
+        if (extra) Object.keys(extra).forEach(function (k) { h[k] = extra[k]; });
+        return h;
+    }
+
+    function _url() {
+        var p = [];
+        if (_op === 'select') p.push('select=' + encodeURIComponent(_cols));
+        _filters.forEach(function (f) { p.push(f); });
+        if (_ord) p.push('order=' + _ord);
+        if (_lim !== null) p.push('limit=' + _lim);
+        return SUPABASE_URL + '/rest/v1/' + table + (p.length ? '?' + p.join('&') : '');
+    }
+
+    function _run() {
+        if (_cached) return _cached;
+        var method = { select: 'GET', insert: 'POST', update: 'PATCH', delete: 'DELETE' }[_op];
+        var hdrs   = _hdrs(
+            _single            ? { 'Accept': 'application/vnd.pgrst.object+json' } :
+            _op !== 'select'   ? { 'Prefer': 'return=minimal' } : null
+        );
+        _cached = _vplXhr(method, _url(), hdrs, _body)
+            .then(function (data) {
+                return _op === 'select'
+                    ? { data: _single ? data : (data || []), error: null }
+                    : { data: null, error: null };
+            })
+            .catch(function (e) {
+                return _op === 'select'
+                    ? { data: _single ? null : [], error: { message: e.message } }
+                    : { error: { message: e.message } };
+            });
+        return _cached;
+    }
+
+    var b = {
+        select: function (c)      { _cols = c || '*'; _op = 'select'; return b; },
+        eq:     function (c, v)   { _filters.push(c + '=eq.' + v); return b; },
+        in:     function (c, vs)  { _filters.push(c + '=in.(' + vs.join(',') + ')'); return b; },
+        order:  function (c, o)   { _ord = c + '.' + ((o && o.ascending === false) ? 'desc' : 'asc'); return b; },
+        limit:  function (n)      { _lim = n; return b; },
+        single: function ()       { _single = true; return b; },
+        insert: function (row)    { _op = 'insert'; _body = row; return b; },
+        update: function (data)   { _op = 'update'; _body = data; return b; },
+        delete: function ()       { _op = 'delete'; return b; },
+        then:   function (f, r)   { return _run().then(f, r); },
+        catch:  function (r)      { return _run().catch(r); }
+    };
+    return b;
+}
+
+// Session helpers (localStorage with graceful fallback)
+function _vplLoadSession() {
+    try {
+        var raw = localStorage.getItem('vpl_sess');
+        if (!raw) return null;
+        var s = JSON.parse(raw);
+        // Discard if expired
+        if (s.expires_at && (s.expires_at * 1000) < Date.now()) {
+            localStorage.removeItem('vpl_sess');
+            return null;
+        }
+        return s;
+    } catch (e) { return null; }
+}
+function _vplSaveSession(s)  { try { localStorage.setItem('vpl_sess', JSON.stringify(s)); } catch (e) {} }
+function _vplClearSession()  { try { localStorage.removeItem('vpl_sess'); } catch (e) {} }
+
+// The db object — drop-in replacement for the Supabase JS client
+var db = {
+    from: _vplFrom,
+    auth: {
+        getSession: function () {
+            if (!_vplSession) _vplSession = _vplLoadSession();
+            return Promise.resolve({ data: { session: _vplSession } });
+        },
+        signInWithPassword: function (creds) {
+            return _vplXhr(
+                'POST',
+                SUPABASE_URL + '/auth/v1/token?grant_type=password',
+                { 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+                { email: creds.email, password: creds.password }
+            ).then(function (data) {
+                _vplSession = data;
+                _vplSaveSession(data);
+                return { data: { session: data, user: data.user }, error: null };
+            }).catch(function (e) {
+                return { data: null, error: { message: e.message } };
+            });
+        },
+        signOut: function () {
+            return _vplXhr(
+                'POST',
+                SUPABASE_URL + '/auth/v1/logout',
+                { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + _vplGetToken(), 'Content-Type': 'application/json' },
+                {}
+            ).then(function () {
+                _vplSession = null; _vplClearSession();
+            }).catch(function () {
+                _vplSession = null; _vplClearSession();
+            });
+        }
+    }
+};
 
 // ========================================
 // GLOBAL STATE
@@ -40,10 +196,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // and nav buttons are always responsive, even if Supabase is slow.
     setupEventListeners();
 
-    if (!db) {
-        showDbError();
-        return;
-    }
+    // db is always available (built-in XHR client), so go straight to auth check
 
     // ── STEP 2: Check for existing session ──────────────────────
     db.auth.getSession().then(function (result) {
@@ -109,10 +262,8 @@ function setupEventListeners() {
     var mobileToggle = document.getElementById('mobileMenuToggle');
     if (mobileToggle) {
         mobileToggle.addEventListener('click', toggleMobileMenu);
-        // Kindle fix: browser has a 300ms tap delay that swallows 'click' events
-        // Adding 'touchend' fires immediately on finger-lift and bypasses the delay
         mobileToggle.addEventListener('touchend', function (e) {
-            e.preventDefault(); // prevent the ghost click that follows touchend
+            e.preventDefault();
             toggleMobileMenu();
         });
     }
@@ -346,30 +497,12 @@ function loadLiveMatchesOnce() {
 }
 
 function _fetchAndRenderLiveMatches() {
-    if (!db) {
-        var c = document.getElementById('liveMatchesList');
-        if (c) c.innerHTML = '<p class="no-matches-msg">Database not connected. Please refresh the page.</p>';
-        return;
-    }
-    // Show a loading message so Kindle users know the page is working
-    var container = document.getElementById('liveMatchesList');
-    if (container && container.innerHTML.trim() === '') {
-        container.innerHTML = '<p class="no-matches-msg">Loading matches...</p>';
-    }
+    if (!db) return;
     db.from('matches').select('*').in('status', ['live', 'upcoming']).order('date_time', { ascending: true })
         .then(function (result) {
-            if (result.error) {
-                console.error('Error loading live matches:', result.error);
-                var cont = document.getElementById('liveMatchesList');
-                if (cont) cont.innerHTML = '<p class="no-matches-msg">Error loading matches: ' + result.error.message + '</p>';
-                return;
-            }
+            if (result.error) { console.error('Error loading live matches:', result.error); return; }
             renderLiveMatchesList(result.data || []);
-        }).catch(function (e) {
-            console.error('Fetch error:', e);
-            var cont = document.getElementById('liveMatchesList');
-            if (cont) cont.innerHTML = '<p class="no-matches-msg">Connection error. Check your internet and refresh.</p>';
-        });
+        }).catch(function (e) { console.error('Fetch error:', e); });
 }
 
 // ========================================
@@ -584,7 +717,6 @@ function renderLiveMatchesList(matches) {
     matches.forEach(function (m) {
         var card = document.createElement('div');
         card.className = 'match-card ' + (m.status === 'live' ? 'live' : '');
-        // Use setAttribute instead of dataset for older Kindle browser compatibility
         card.setAttribute('data-match-id', m.id);
 
         if (m.id === currentMatchId && !details.classList.contains('hidden')) {
@@ -593,7 +725,6 @@ function renderLiveMatchesList(matches) {
 
         (function (matchId, cardEl) {
             card.onclick = function () { _toggleLiveDetails(matchId, cardEl); };
-            // Kindle fix: add touchend as fallback for tap events
             card.addEventListener('touchend', function (e) {
                 e.preventDefault();
                 _toggleLiveDetails(matchId, cardEl);

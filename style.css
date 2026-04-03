@@ -188,7 +188,6 @@ body {
   border-radius: var(--radius-sm);
   white-space: nowrap;
   height: 34px;
-  /* Kindle fix: removes tap delay */
   touch-action: manipulation;
   -webkit-tap-highlight-color: rgba(0,0,0,0);
 }
@@ -240,10 +239,8 @@ body {
   padding: 6px;
   margin-left: auto;
   border-radius: var(--radius-sm);
-  /* Kindle fix: removes the 300ms tap delay on touch browsers */
   touch-action: manipulation;
   -webkit-tap-highlight-color: rgba(0,0,0,0);
-  /* Make tap target larger for Kindle */
   min-width: 40px;
   min-height: 40px;
   -webkit-box-align: center;
@@ -317,7 +314,6 @@ body {
    MATCH CARDS
 ═══════════════════════════════════════════════════════════════ */
 .matches-grid {
-  /* Flexbox fallback — Kindle's browser doesn't always support CSS Grid */
   display: -webkit-box;
   display: -webkit-flex;
   display: flex;
@@ -328,7 +324,6 @@ body {
 }
 
 .match-card {
-  /* Each card takes at least 280px and expands to fill available space */
   -webkit-box-flex: 1;
   -webkit-flex: 1 1 280px;
   flex: 1 1 280px;
@@ -340,7 +335,6 @@ body {
   cursor: pointer;
   position: relative;
   overflow: hidden;
-  /* Kindle fix: instant tap response */
   touch-action: manipulation;
   -webkit-tap-highlight-color: rgba(0,0,0,0);
 }
@@ -1953,7 +1947,6 @@ body {
     z-index: 99;
   }
 
-  /* Block is used as a fallback in case flex fails on Kindle */
   .nav.mobile-open {
     display: block;
     display: -webkit-flex;
