@@ -100,10 +100,22 @@ function showDbError() {
 function setupEventListeners() {
     document.querySelectorAll('.nav-btn').forEach(function (btn) {
         btn.addEventListener('click', function () { switchTab(this.getAttribute('data-tab')); });
+        btn.addEventListener('touchend', function (e) {
+            e.preventDefault();
+            switchTab(this.getAttribute('data-tab'));
+        });
     });
 
     var mobileToggle = document.getElementById('mobileMenuToggle');
-    if (mobileToggle) mobileToggle.addEventListener('click', toggleMobileMenu);
+    if (mobileToggle) {
+        mobileToggle.addEventListener('click', toggleMobileMenu);
+        // Kindle fix: browser has a 300ms tap delay that swallows 'click' events
+        // Adding 'touchend' fires immediately on finger-lift and bypasses the delay
+        mobileToggle.addEventListener('touchend', function (e) {
+            e.preventDefault(); // prevent the ghost click that follows touchend
+            toggleMobileMenu();
+        });
+    }
 
     var loginBtn  = document.getElementById('loginBtn');
     var logoutBtn = document.getElementById('logoutBtn');
@@ -334,12 +346,30 @@ function loadLiveMatchesOnce() {
 }
 
 function _fetchAndRenderLiveMatches() {
-    if (!db) return;
+    if (!db) {
+        var c = document.getElementById('liveMatchesList');
+        if (c) c.innerHTML = '<p class="no-matches-msg">Database not connected. Please refresh the page.</p>';
+        return;
+    }
+    // Show a loading message so Kindle users know the page is working
+    var container = document.getElementById('liveMatchesList');
+    if (container && container.innerHTML.trim() === '') {
+        container.innerHTML = '<p class="no-matches-msg">Loading matches...</p>';
+    }
     db.from('matches').select('*').in('status', ['live', 'upcoming']).order('date_time', { ascending: true })
         .then(function (result) {
-            if (result.error) { console.error('Error loading live matches:', result.error); return; }
+            if (result.error) {
+                console.error('Error loading live matches:', result.error);
+                var cont = document.getElementById('liveMatchesList');
+                if (cont) cont.innerHTML = '<p class="no-matches-msg">Error loading matches: ' + result.error.message + '</p>';
+                return;
+            }
             renderLiveMatchesList(result.data || []);
-        }).catch(function (e) { console.error('Fetch error:', e); });
+        }).catch(function (e) {
+            console.error('Fetch error:', e);
+            var cont = document.getElementById('liveMatchesList');
+            if (cont) cont.innerHTML = '<p class="no-matches-msg">Connection error. Check your internet and refresh.</p>';
+        });
 }
 
 // ========================================
@@ -554,7 +584,8 @@ function renderLiveMatchesList(matches) {
     matches.forEach(function (m) {
         var card = document.createElement('div');
         card.className = 'match-card ' + (m.status === 'live' ? 'live' : '');
-        card.dataset.matchId = m.id;
+        // Use setAttribute instead of dataset for older Kindle browser compatibility
+        card.setAttribute('data-match-id', m.id);
 
         if (m.id === currentMatchId && !details.classList.contains('hidden')) {
             card.classList.add('match-card--open');
@@ -562,6 +593,11 @@ function renderLiveMatchesList(matches) {
 
         (function (matchId, cardEl) {
             card.onclick = function () { _toggleLiveDetails(matchId, cardEl); };
+            // Kindle fix: add touchend as fallback for tap events
+            card.addEventListener('touchend', function (e) {
+                e.preventDefault();
+                _toggleLiveDetails(matchId, cardEl);
+            });
         })(m.id, card);
 
         var badge = m.status === 'live'
