@@ -81,7 +81,8 @@
 
 /* ── Reset & Base ───────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { scroll-behavior: smooth; }
+/* Kindle fix: smooth scroll causes repaint glitches on older WebKit */
+html { scroll-behavior: auto; }
 
 body {
   font-family: var(--font-body);
@@ -91,6 +92,8 @@ body {
   overflow-x: hidden;
   font-size: 15px;
   line-height: 1.6;
+  /* Kindle fix: hardware-accelerated touch scrolling prevents flicker */
+  -webkit-overflow-scrolling: touch;
 }
 
 .container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
@@ -130,8 +133,9 @@ body {
    HEADER
 ═══════════════════════════════════════════════════════════════ */
 .header {
-  position: sticky;
-  top: 0;
+  /* Kindle fix: position:sticky causes full-page repaints on scroll, causing glitches.
+     Using relative means the header scrolls with the page — cleaner on Kindle. */
+  position: relative;
   z-index: 100;
   background-color: var(--green-800);
   border-bottom: 3px solid var(--gold-500);
@@ -1777,11 +1781,19 @@ body {
 ═══════════════════════════════════════════════════════════════ */
 .modal {
   position: fixed;
-  inset: 0;
+  /* Kindle fix: 'inset' shorthand not supported — use explicit sides */
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   background: rgba(26,23,21,0.65);
   z-index: 200;
+  display: -webkit-box;
+  display: -webkit-flex;
   display: flex;
+  -webkit-box-align: center;
   align-items: center;
+  -webkit-box-pack: center;
   justify-content: center;
   padding: 20px;
 }
@@ -1822,11 +1834,19 @@ body {
 
 .modal-overlay {
   position: fixed;
-  inset: 0;
+  /* Kindle fix: 'inset' shorthand not supported — use explicit sides */
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   background: rgba(26,23,21,0.65);
   z-index: 200;
+  display: -webkit-box;
+  display: -webkit-flex;
   display: flex;
+  -webkit-box-align: center;
   align-items: center;
+  -webkit-box-pack: center;
   justify-content: center;
   padding: 20px;
 }
@@ -1853,6 +1873,8 @@ body {
 }
 
 .modal-buttons {
+  display: -webkit-box;
+  display: -webkit-flex;
   display: flex;
   gap: 9px;
   margin-top: 6px;
